@@ -164,16 +164,16 @@ func setupRouter(config Config) *gin.Engine {
 
 		// RequestFilter 처리
 		for _, rf := range route.RequestFilters {
-			handlers = append(handlers, createRequestFilterMiddleware(&rf))
+			handlers = append(handlers, CreateRequestFilterMiddleware(&rf))
 		}
 
 		// ConditionFilter 처리
 		if route.ConditionFilter != nil {
-			handlers = append(handlers, createConditionFilterMiddleware(route.ConditionFilter))
+			handlers = append(handlers, CreateConditionFilterMiddleware(route.ConditionFilter))
 		}
 
 		if route.Proxy != nil {
-			handlers = append(handlers, createProxyHandler(route.Proxy))
+			handlers = append(handlers, CreateProxyHandler(route.Proxy))
 		}
 
 		router.Handle(route.Method, route.Path, handlers...)
@@ -183,7 +183,7 @@ func setupRouter(config Config) *gin.Engine {
 }
 
 // Middleware 생성 함수들
-func createRequestFilterMiddleware(filter *RequestFilter) gin.HandlerFunc {
+func CreateRequestFilterMiddleware(filter *RequestFilter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !filter.Process(c) {
 			c.AbortWithStatus(http.StatusForbidden)
@@ -193,7 +193,7 @@ func createRequestFilterMiddleware(filter *RequestFilter) gin.HandlerFunc {
 	}
 }
 
-func createConditionFilterMiddleware(filter *ConditionFilter) gin.HandlerFunc {
+func CreateConditionFilterMiddleware(filter *ConditionFilter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !filter.Process(c) {
 			c.AbortWithStatus(http.StatusForbidden)
@@ -204,7 +204,7 @@ func createConditionFilterMiddleware(filter *ConditionFilter) gin.HandlerFunc {
 }
 
 // 프록시 핸들러 생성
-func createProxyHandler(config *ProxyConfig) gin.HandlerFunc {
+func CreateProxyHandler(config *ProxyConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 프록시 로직 구현
 		fmt.Printf("Proxying to: %s\n", config.Target)

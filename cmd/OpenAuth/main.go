@@ -39,7 +39,7 @@ func main() {
 		log.Error("Could not create access log directory")
 	}
 
-	file, err := os.Open("default_config.yaml")
-	defer file.Close()
-
+	if err := StartServer(":8080"); err != nil {
+		panic(err)
+	}
 }
