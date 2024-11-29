@@ -24,6 +24,44 @@ type TokenValidator struct {
 	config    ServiceAccountConfig
 }
 
+/*
+Package k8sQuery implements a Kubernetes ServiceAccount token validation system.
+
+# Types
+ServiceAccountConfig:
+- Manages allowed ServiceAccount configurations
+- Contains map of namespace to allowed service account names
+
+TokenValidator:
+- Handles Kubernetes token validation
+- Maintains kubernetes client and service account configuration
+
+AuthResponse:
+- Represents authentication response structure
+- Contains authorization status, username, and potential error messages
+
+# Main Functions
+- NewTokenValidator(saConfig): Creates new TokenValidator instance with given configuration
+- ValidateToken(token): Validates ServiceAccount token and checks if it's allowed
+- validateServiceAccountToken(token): Basic token validation without allowed account checking
+- isAllowedServiceAccount(namespace, name): Checks if ServiceAccount is in allowed list
+- UpdateAllowedAccounts(accounts): Updates the list of allowed service accounts
+
+# Middleware
+AuthMiddleware: (for gin-gonic)
+- Gin middleware for ServiceAccount token authentication
+- Validates Bearer tokens from Authorization header
+- Adds authenticated username to request context
+
+# Default Configuration
+Default allowed service accounts:
+- namespace: "default", accounts: ["oauth-configurator"]
+- namespace: "kube-system", accounts: ["oauth-admin"]
+
+The package provides token validation and authentication middleware for Kubernetes
+ServiceAccounts, ensuring only allowed service accounts can access protected resources.
+*/
+
 // NewTokenValidator는 새로운 TokenValidator를 생성합니다
 func NewTokenValidator(saConfig ServiceAccountConfig) (*TokenValidator, error) {
 	config, err := rest.InClusterConfig()
@@ -48,6 +86,49 @@ func NewTokenValidator(saConfig ServiceAccountConfig) (*TokenValidator, error) {
 		k8sClient: clientset,
 		config:    saConfig,
 	}, nil
+}
+
+func validateServiceAccountToken(token string) (bool, error) {
+	// 클러스터 내부 설정 가져오기
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return false, fmt.Errorf("failed to get cluster config: %v", err)
+	}
+
+	// 쿠버네티스 클라이언트 생성
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return false, fmt.Errorf("failed to create client: %v", err)
+	}
+
+	// TokenReview 객체 생성
+	tokenReview := &authenticationv1.TokenReview{
+		Spec: authenticationv1.TokenReviewSpec{
+			Token: token,
+		},
+	}
+
+	// API 서버에 검증 요청
+	result, err := clientset.AuthenticationV1().TokenReviews().Create(
+		context.TODO(),
+		tokenReview,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return false, fmt.Errorf("token review failed: %v", err)
+	}
+
+	// 검증 결과 확인
+	if !result.Status.Authenticated {
+		return false, nil
+	}
+
+	// 추가적인 검증 (예: ServiceAccount인지 확인)
+	if !strings.HasPrefix(result.Status.User.Username, "system:serviceaccount:") {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // Check received serviceaccount is valid

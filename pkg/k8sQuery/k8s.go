@@ -19,6 +19,50 @@ type K8sClient struct {
 	clientset *kubernetes.Clientset
 }
 
+/*
+Package k8sQuery implements a Kubernetes client wrapper for managing cluster resources.
+
+Implemented Functions:
+
+# Client Initialization
+- NewK8sClient(): Creates new Kubernetes client instance
+
+# Deployment Operations
+- FindDeployment(namespace, name): Finds specific deployment
+- CreateDeployment(namespace, deployment): Creates new deployment
+- UpdateDeployment(namespace, deployment): Updates existing deployment
+- DeleteDeployment(namespace, name): Deletes deployment
+- ListDeployments(namespace): Lists all deployments in namespace
+- CreateBasicDeployment(namespace, name, image, port, replicas): Creates deployment with basic configuration
+- IsDeploymentExist(namespace, name): Checks if deployment exists
+- WaitForDeploymentReady(namespace, name, timeout): Waits until deployment is ready
+
+# Pod Operations
+- CreatePod(namespace, pod): Creates new pod
+- GetPod(namespace, name): Gets specific pod
+- DeletePod(namespace, name): Deletes pod
+- ListPods(namespace): Lists all pods in namespace
+- GetPodIPs(deployment): Gets IPs of all pods in deployment
+
+# Service Operations
+- CreateService(namespace, service): Creates new service
+- GetService(namespace, name): Gets specific service
+- UpdateService(namespace, service): Updates existing service
+- DeleteService(namespace, name): Deletes service
+- ListServices(namespace): Lists all services in namespace
+- CreateBasicService(namespace, name, port, targetPort): Creates service with basic configuration
+- GetServiceIP(deployment): Gets IP of service associated with deployment
+- GetServiceEndpoint(namespace, name): Gets service endpoint
+- IsServiceExist(namespace, name): Checks if service exists
+
+# Query Operations
+- GetPodIPs: Gets IPs of all pods in deployment
+- GetServiceIP: Gets service IP associated with deployment
+
+This package provides a simplified interface for managing Kubernetes resources,
+handling common operations for Deployments, Pods, and Services.
+*/
+
 // NewK8sClient creates a new Kubernetes client
 func NewK8sClient() (*K8sClient, error) {
 	home := homedir.HomeDir()
