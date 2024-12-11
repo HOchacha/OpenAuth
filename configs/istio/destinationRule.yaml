@@ -1,0 +1,21 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: mongodb-atlas
+  namespace: default
+spec:
+  host: auth-db.8gdb0.mongodb.net
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: auth-db.8gdb0.mongodb.net
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 100
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s

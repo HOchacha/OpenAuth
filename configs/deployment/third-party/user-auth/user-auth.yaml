@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openauth-user-auth
+  namespace: default
+  labels:
+    app: openauth-user-auth
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    app: openauth-user-auth
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openauth-user-auth
+  namespace: default
+  labels:
+    app: openauth-user-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openauth-user-auth
+  template:
+    metadata:
+      labels:
+        app: openauth-user-auth
+    spec:
+      containers:
+        - name: openauth-user-auth
+          image: hochacha/user-auth:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: mongodb-hocha
+          resources:
+            requests:
+              memory: "500Mi"
+              cpu: "500m"
+            limits:
+              memory: "500Mi"
+              cpu: "500m"

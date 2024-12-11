@@ -3,7 +3,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openauth
-  namespace: kube-system
 spec:
   replicas: 1
   selector:
@@ -17,7 +16,7 @@ spec:
       serviceAccountName: oauth-admin
       containers:
         - name: openauth
-          image: hochacha/openauth:proto  # This will be replaced during deployment
+          image: hochacha/openauth:config_1211
           ports:
             - containerPort: 8080
           resources:
@@ -32,11 +31,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: openauth
-  namespace: kube-system
 spec:
   selector:
     app: openauth
   ports:
     - port: 8080
-      targetPort: 8080
+      targetPort: 80
   type: ClusterIP

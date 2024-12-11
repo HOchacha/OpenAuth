@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/op/go-logging"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// Filter 인터페이스 정의
+var log = logging.MustGetLogger("filter")
+
 type Filter interface {
 	Process(c *gin.Context) bool
 }
 
-// RequestFilter 구조체 정의
 type RequestFilter struct {
 	RemoteServer  string            `yaml:"remote_server"`
 	RequestFormat map[string]string `yaml:"request_format"`
@@ -23,7 +25,6 @@ type RequestFilter struct {
 	client        *http.Client
 }
 
-// ConditionFilter 구조체 정의
 type ConditionFilter struct {
 	Conditions []Condition `yaml:"conditions"`
 }
@@ -34,7 +35,6 @@ type Condition struct {
 	Value    interface{} `yaml:"value"`
 }
 
-// Config 구조체 수정
 type Config struct {
 	Routes []RouteConfig `yaml:"routes"`
 }
@@ -49,22 +49,45 @@ type RouteConfig struct {
 	Method          string           `yaml:"method"`
 	RequestFilters  []RequestFilter  `yaml:"request_filters"`
 	ConditionFilter *ConditionFilter `yaml:"condition_filter,omitempty"`
-	Proxy           *ProxyConfig     `yaml:"proxy,omitempty"`
 }
 
 func (rf *RequestFilter) Process(c *gin.Context) bool {
 	if rf.client == nil {
+		log.Debug("Initializing HTTP client")
 		rf.client = &http.Client{
 			Timeout: time.Second * 10,
+			Transport: &http.Transport{
+				MaxIdleConns:       10,
+				IdleConnTimeout:    30 * time.Second,
+				DisableCompression: true,
+			},
 		}
 	}
 
-	// 현재 전달받은 요청의 HTTP Body 체크
+	log.Info("=== RequestFilter Process Start ===")
+	log.Debugf("RemoteServer: %s", rf.RemoteServer)
+
+	// 1. 요청 본문을 읽음
 	var requestBody map[string]interface{}
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		fmt.Printf("Error reading request body: %v\n", err)
+	rawData, err := c.GetRawData()
+	if err != nil {
+		log.Errorf("Error reading raw request body: %v", err)
 		return false
 	}
+
+	// 2. 본문을 다시 Context에 설정
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawData))
+
+	// 3. JSON 파싱
+	if err := json.Unmarshal(rawData, &requestBody); err != nil {
+		log.Errorf("Error parsing request body: %v", err)
+		return false
+	}
+
+	log.Debugf("Received request body: %+v", requestBody)
+
+	// 4. 다음 미들웨어를 위해 본문 다시 설정
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(rawData))
 
 	// 지정된 필드만 선택하여 새로운 맵 생성 -> 새로운 Request Body
 	filteredBody := make(map[string]interface{})
@@ -73,25 +96,25 @@ func (rf *RequestFilter) Process(c *gin.Context) bool {
 			filteredBody[field] = value
 		}
 	}
+	log.Debugf("Fields to send: %v", rf.FieldsToSend)
+	log.Debugf("Filtered request body: %+v", filteredBody)
 
-	// JSON으로 마샬링
 	jsonBody, err := json.Marshal(filteredBody)
 	if err != nil {
 		fmt.Printf("Error marshaling filtered body: %v\n", err)
 		return false
 	}
 
-	// 원격 서버로 요청 전송
 	req, err := http.NewRequest("POST", rf.RemoteServer, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		fmt.Printf("Error creating request: %v\n", err)
 		return false
 	}
 
-	// 설정된 헤더 추가
 	for key, value := range rf.RequestFormat {
 		req.Header.Set(key, value)
 	}
+	log.Debugf("Request headers: %+v", req.Header)
 
 	resp, err := rf.client.Do(req)
 	if err != nil {
@@ -100,22 +123,44 @@ func (rf *RequestFilter) Process(c *gin.Context) bool {
 	}
 	defer resp.Body.Close()
 
-	// 응답 처리
 	if resp.StatusCode == http.StatusOK {
-		var result struct {
-			Allow bool `json:"allow"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			fmt.Printf("Error decoding response: %v\n", err)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Errorf("Failed to read response body: %v", err)
 			return false
 		}
-		return result.Allow
+		log.Debugf("Raw response body: %s", string(body))
+
+		// 실제 응답 구조에 맞게 수정
+		var result struct {
+			Message string `json:"message"`
+			OTP     int    `json:"otp"`
+		}
+
+		// body를 다시 읽을 수 있도록 새로운 Reader 생성
+		resp.Body = io.NopCloser(bytes.NewBuffer(body))
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			log.Errorf("Failed to decode response: %v", err)
+			return false
+		}
+
+		// 200 OK와 message가 있으면 성공으로 처리
+		log.Debugf("Decoded message: %s, OTP: %d", result.Message, result.OTP)
+		return true // StatusOK이면 성공으로 처리
 	}
+
+	log.Debugf("Response from FilterServer: %+v\n", resp)
+
+	log.Warning("Request not allowed (non-200 status code)")
+	log.Info("=== RequestFilter Process End ===")
 
 	return false
 }
 
 // ConditionFilter 구현
+// ConditionFilter에서는 HTTP 헤더, HTTP Param, Path Query String에 따라서
+// 동일한지, 포함하고 있는지, 접두사-접미사가 동일한지 검사한다.
 func (cf *ConditionFilter) Process(c *gin.Context) bool {
 	for _, condition := range cf.Conditions {
 		if !evaluateCondition(c, condition) {
@@ -128,7 +173,6 @@ func (cf *ConditionFilter) Process(c *gin.Context) bool {
 func evaluateCondition(c *gin.Context, condition Condition) bool {
 	var fieldValue string
 
-	// 필드 값 가져오기
 	switch condition.Field {
 	case "header":
 		fieldValue = c.GetHeader(condition.Value.(string))
@@ -140,7 +184,6 @@ func evaluateCondition(c *gin.Context, condition Condition) bool {
 		return false
 	}
 
-	// 조건 평가
 	switch condition.Operator {
 	case "equals":
 		return fieldValue == condition.Value.(string)
@@ -155,8 +198,7 @@ func evaluateCondition(c *gin.Context, condition Condition) bool {
 	}
 }
 
-// 라우터 설정 함수
-func setupRouter(config Config) *gin.Engine {
+func SetupRouter(config Config) *gin.Engine {
 	router := gin.New()
 
 	for _, route := range config.Routes {
@@ -172,24 +214,23 @@ func setupRouter(config Config) *gin.Engine {
 			handlers = append(handlers, CreateConditionFilterMiddleware(route.ConditionFilter))
 		}
 
-		if route.Proxy != nil {
-			handlers = append(handlers, CreateProxyHandler(route.Proxy))
-		}
-
 		router.Handle(route.Method, route.Path, handlers...)
 	}
 
 	return router
 }
 
-// Middleware 생성 함수들
 func CreateRequestFilterMiddleware(filter *RequestFilter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !filter.Process(c) {
+		log.Info("Starting RequestFilter middleware")
+
+		if filter.Process(c) {
+			log.Info("Filter passed - continuing to next handler")
+			c.Next()
+		} else {
+			log.Warning("Filter failed - returning 403")
 			c.AbortWithStatus(http.StatusForbidden)
-			return
 		}
-		c.Next()
 	}
 }
 
@@ -200,14 +241,5 @@ func CreateConditionFilterMiddleware(filter *ConditionFilter) gin.HandlerFunc {
 			return
 		}
 		c.Next()
-	}
-}
-
-// 프록시 핸들러 생성
-func CreateProxyHandler(config *ProxyConfig) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 프록시 로직 구현
-		fmt.Printf("Proxying to: %s\n", config.Target)
-		c.JSON(200, gin.H{"proxied_to": config.Target})
 	}
 }

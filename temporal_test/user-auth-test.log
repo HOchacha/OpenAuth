@@ -1,0 +1,6 @@
+network-debug:~# curl -X POST http://10.244.137.158:5000/auth/signup -H "Content-Type: application/json" -d '{"usern
+ame": "hohyeon", "password": "1234", "role":"user", "email":"11112222@naver.com"}'
+{
+  "message": "User created successfully!"
+}
+network-debug:~#

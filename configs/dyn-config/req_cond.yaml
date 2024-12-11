@@ -15,6 +15,3 @@ routes:
         - field: "query"
           operator: "contains"
           value: "version"
-    proxy:
-      target: "http://backend-service"
-      timeout: 30

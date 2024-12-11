@@ -11,8 +11,8 @@ var (
 )
 
 func initLogger() {
-	backend1 := logging.NewLogBackend(os.Stderr, "", 0)
-	backend2 := logging.NewLogBackend(os.Stderr, "", 0)
+	backend1 := logging.NewLogBackend(os.Stdout, "", 0)
+	backend2 := logging.NewLogBackend(os.Stdout, "", 0)
 
 	backend2Foramtter := logging.NewBackendFormatter(backend2, format)
 
@@ -34,12 +34,12 @@ func main() {
 		return
 	}
 
-	err := os.Mkdir("/var/OpenAuth/accesslog", 755)
+	err := os.Mkdir("/var/OpenAuth/accesslog", 0755)
 	if err != nil && err == os.ErrExist {
 		log.Error("Could not create access log directory")
 	}
 
-	if err := StartServer(":8080"); err != nil {
+	if err := StartServer("0.0.0.0:80"); err != nil {
 		panic(err)
 	}
 }

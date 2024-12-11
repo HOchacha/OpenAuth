@@ -65,6 +65,7 @@ lint:
 docker-build:
 	@echo "Building Docker image..."
 	docker build -t ${DOCKER_IMAGE} -f docker/Dockerfile.OpenAuth .
+	docker push ${DOCKER_IMAGE}
 
 docker-push: docker-build
 	@echo "Pushing Docker image..."

@@ -11,13 +11,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"log"
 	"path/filepath"
 	"time"
 )
-
-type K8sClient struct {
-	clientset *kubernetes.Clientset
-}
 
 /*
 Package k8sQuery implements a Kubernetes client wrapper for managing cluster resources.
@@ -62,6 +59,11 @@ Implemented Functions:
 This package provides a simplified interface for managing Kubernetes resources,
 handling common operations for Deployments, Pods, and Services.
 */
+
+// NewK8sClient creates a new Kubernetes client
+type K8sClient struct {
+	clientset *kubernetes.Clientset
+}
 
 // NewK8sClient creates a new Kubernetes client
 func NewK8sClient() (*K8sClient, error) {
@@ -121,32 +123,44 @@ func (c *K8sClient) GetPodIPs(deployment *appsv1.Deployment) ([]string, error) {
 
 // GetServiceIP gets the IP of the service associated with the deployment
 func (c *K8sClient) GetServiceIP(deployment *appsv1.Deployment) (string, error) {
-	// Get services in the same namespace
-	services, err := c.clientset.CoreV1().Services(deployment.Namespace).List(
-		context.TODO(),
-		metav1.ListOptions{},
-	)
+
+	log.Printf("Deployment Name: %s", deployment.Name)
+	log.Printf("Namespace: %s", deployment.Namespace)
+	log.Printf("Deployment Labels: %+v", deployment.Labels)
+	log.Printf("Pod Template Labels: %+v", deployment.Spec.Template.Labels)
+	log.Printf("Replicas: %d", *deployment.Spec.Replicas)
+
+	podLabels := deployment.Spec.Template.Labels
+
+	services, err := c.clientset.CoreV1().Services(deployment.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
+		log.Printf("Error listing services: %v", err)
 		return "", fmt.Errorf("failed to list services: %v", err)
 	}
 
-	// Find service that matches deployment labels
-	for _, service := range services.Items {
-		// Check if service selector matches deployment labels
+	log.Printf("Found %d services in namespace '%s'", len(services.Items), deployment.Namespace)
+
+	for _, svc := range services.Items {
+		if svc.Spec.Selector == nil {
+			continue
+		}
+
+		// checks service selector has pod's label
 		matches := true
-		for selectorKey, selectorValue := range service.Spec.Selector {
-			if labelValue, exists := deployment.Spec.Template.Labels[selectorKey]; !exists || labelValue != selectorValue {
+		for key, value := range svc.Spec.Selector {
+			if podValue, exists := podLabels[key]; !exists || podValue != value {
 				matches = false
 				break
 			}
 		}
+
 		if matches {
-			// Return ClusterIP for the matching service
-			return service.Spec.ClusterIP, nil
+			log.Printf("Matching Service Found - Name: %s, ClusterIP: %s, Type: %s", svc.Name, svc.Spec.ClusterIP, svc.Spec.Type)
+			return svc.Spec.ClusterIP, nil
 		}
 	}
 
-	return "", fmt.Errorf("no matching service found for deployment")
+	return "", fmt.Errorf("no service found for deployment %s", deployment.Name)
 }
 
 // Deployment 관련 함수들
@@ -371,4 +385,38 @@ func (c *K8sClient) IsServiceExist(namespace, name string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// GetServiceAccountToken retrieves the token from the ServiceAccount's associated Secret
+func (c *K8sClient) GetServiceAccountToken(namespace, saName string) (string, error) {
+	log.Printf("Namespace: %s, ServiceAccount: %s", namespace, saName)
+
+	// ServiceAccount 가져오기
+	sa, err := c.clientset.CoreV1().ServiceAccounts(namespace).Get(context.TODO(), saName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get service account: %v", err)
+	}
+
+	// 연결된 시크릿 찾기
+	if len(sa.Secrets) == 0 {
+		return "", fmt.Errorf("no secrets found for service account %s in namespace %s", saName, namespace)
+	}
+
+	// 첫 번째 시크릿 선택 (필요에 따라 로직 수정 가능)
+	secretName := sa.Secrets[0].Name
+
+	log.Printf("secretName: %s", secretName)
+	// 시크릿 가져오기
+	secret, err := c.clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s: %v", secretName, err)
+	}
+
+	// 토큰 추출
+	token, ok := secret.Data["token"]
+	if !ok {
+		return "", fmt.Errorf("token not found in secret %s", secretName)
+	}
+	log.Printf("token: %s", token)
+	return string(token), nil
 }

@@ -133,17 +133,21 @@ func validateServiceAccountToken(token string) (bool, error) {
 
 // Check received serviceaccount is valid
 func (tv *TokenValidator) ValidateToken(token string) (bool, string, error) {
+	fmt.Printf("TokenValidator.ValidateToken: %+v\n", tv)
+	fmt.Printf("Token: %s\n", token)
 	review := &authenticationv1.TokenReview{
 		Spec: authenticationv1.TokenReviewSpec{
 			Token: token,
 		},
 	}
 
+	fmt.Printf("review: %+v", review)
 	result, err := tv.k8sClient.AuthenticationV1().TokenReviews().Create(
 		context.TODO(),
 		review,
 		metav1.CreateOptions{},
 	)
+	fmt.Printf("%+v\n", result)
 	if err != nil {
 		return false, "", fmt.Errorf("token review failed: %v", err)
 	}
@@ -153,34 +157,57 @@ func (tv *TokenValidator) ValidateToken(token string) (bool, string, error) {
 	}
 
 	username := result.Status.User.Username
+	fmt.Printf("username: %s\n", username)
 	if !strings.HasPrefix(username, "system:serviceaccount:") {
 		return false, "", nil
 	}
 
 	parts := strings.Split(username, ":")
+	fmt.Printf("parts: %s\n", parts)
 	if len(parts) != 4 {
 		return false, "", nil
 	}
 
 	namespace := parts[2]
 	serviceAccountName := parts[3]
-
+	fmt.Printf("\nCheck Allowed Service Account\n")
+	fmt.Printf("namespace: %+v\n", namespace)
+	fmt.Printf("serviceAccountName: %+v\n", serviceAccountName)
 	if !tv.isAllowedServiceAccount(namespace, serviceAccountName) {
 		return false, "", nil
 	}
-
+	fmt.Printf("\npassed\n")
 	return true, username, nil
 }
 
 // isAllowedServiceAccount는 주어진 ServiceAccount가 허용되는지 확인합니다
 func (tv *TokenValidator) isAllowedServiceAccount(namespace, name string) bool {
-	if allowedNames, exists := tv.config.AllowedAccounts[namespace]; exists {
-		for _, allowedName := range allowedNames {
-			if name == allowedName {
-				return true
-			}
+	// 현재 검증 중인 네임스페이스와 서비스 어카운트 이름을 출력
+	fmt.Printf("Checking if ServiceAccount is allowed:\n")
+	fmt.Printf("Namespace: %s, ServiceAccount: %s\n", namespace, name)
+
+	// 전체 허용된 서비스 어카운트 설정 출력
+	fmt.Printf("AllowedAccounts configuration: %+v\n", tv.config.AllowedAccounts)
+
+	// 네임스페이스에 대해 허용된 서비스 어카운트 목록 조회
+	allowedNames, exists := tv.config.AllowedAccounts[namespace]
+	if !exists {
+		fmt.Printf("Namespace '%s' is not in the allowed list\n", namespace)
+		return false
+	}
+	fmt.Printf("Allowed ServiceAccounts in namespace '%s': %v\n", namespace, allowedNames)
+
+	// 허용된 이름과 현재 이름 비교
+	for _, allowedName := range allowedNames {
+		fmt.Printf("Comparing '%s' with allowed name '%s'\n", name, allowedName)
+		if name == allowedName {
+			fmt.Printf("Match found: ServiceAccount '%s' is allowed in namespace '%s'\n", name, namespace)
+			return true
 		}
 	}
+
+	// 허용된 이름이 없는 경우
+	fmt.Printf("No match found: ServiceAccount '%s' is not allowed in namespace '%s'\n", name, namespace)
 	return false
 }
 
