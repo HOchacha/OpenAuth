@@ -122,7 +122,7 @@ func (rm *RouterManager) UpdateConfig(newConfig *configServer.Config) error {
 		if len(handlers) > 0 {
 			finalHandler := handlers[len(handlers)-1]
 			handlers = handlers[:len(handlers)-1]
-			log.Debugf("Final handler added: %+v", finalHandler)
+			log.Debugf("Final middleware added: %+v", finalHandler)
 			newEngine.Handle(route.Method, route.Path, append(handlers, finalHandler)...)
 		} else {
 			log.Debugf("No handlers found for route: Method=%s, Path=%s", route.Method, route.Path)

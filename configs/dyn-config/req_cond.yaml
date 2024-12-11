@@ -1,17 +1,37 @@
 routes:
-  - path: "/api/resource"
+  - path: "/signup"
     method: "POST"
     request_filters:
-      - remote_server: "http://a.a.a.a:80/validate"
+      - remote_server: "http://example.com/signup"
         request_format:
           Content-Type: "application/json"
-          X-Custom-Header: "value"
+        fields_to_send: ["username", "password", "email"]
+    condition_filter:
+      conditions:
+        - field: "header"
+          operator: "equals"
+          value: "X-Requested-With"
+  - path: "/login"
+    method: "POST"
+    request_filters:
+      - remote_server: "http://example.com/login"
+        request_format:
+          Content-Type: "application/json"
         fields_to_send: ["username", "password"]
     condition_filter:
       conditions:
         - field: "header"
           operator: "equals"
-          value: "X-Auth-Token"
-        - field: "query"
-          operator: "contains"
-          value: "version"
+          value: "X-Requested-With"
+  - path: "/verify"
+    method: "POST"
+    request_filters:
+      - remote_server: "http://example.com/verify"
+        request_format:
+          Content-Type: "application/json"
+        fields_to_send: ["token"]
+    condition_filter:
+      conditions:
+        - field: "header"
+          operator: "equals"
+          value: "X-Requested-With"

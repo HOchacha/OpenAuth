@@ -225,7 +225,7 @@ func CreateRequestFilterMiddleware(filter *RequestFilter) gin.HandlerFunc {
 		log.Info("Starting RequestFilter middleware")
 
 		if filter.Process(c) {
-			log.Info("Filter passed - continuing to next handler")
+			log.Info("Filter passed - continuing to next middleware")
 			c.Next()
 		} else {
 			log.Warning("Filter failed - returning 403")
