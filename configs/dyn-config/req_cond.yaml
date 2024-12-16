@@ -11,7 +11,7 @@ routes:
         - field: "header"
           operator: "equals"
           value: "X-Requested-With"
-  - path: "/login"
+  - path: "/signin"
     method: "POST"
     request_filters:
       - remote_server: "http://example.com/login"

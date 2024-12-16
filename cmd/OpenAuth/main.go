@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/gin-gonic/gin"
 	"github.com/op/go-logging"
 	"os"
 )
@@ -39,6 +40,7 @@ func main() {
 		log.Error("Could not create access log directory")
 	}
 
+	gin.SetMode(gin.DebugMode)
 	if err := StartServer("0.0.0.0:80"); err != nil {
 		panic(err)
 	}

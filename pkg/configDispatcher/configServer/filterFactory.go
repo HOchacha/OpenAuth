@@ -83,7 +83,6 @@ func (rf *RequestFilter) Process(c *gin.Context) bool {
 		log.Errorf("Error parsing request body: %v", err)
 		return false
 	}
-
 	log.Debugf("Received request body: %+v", requestBody)
 
 	// 4. 다음 미들웨어를 위해 본문 다시 설정
