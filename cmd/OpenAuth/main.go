@@ -30,10 +30,10 @@ func main() {
 	initLogger()
 	log.Info("OpenAuth logger started")
 
-	if os.Geteuid() != 0 {
-		log.Error("No permission to run the program")
-		return
-	}
+	//	if os.Geteuid() != 0 {
+	//		log.Error("No permission to run the program")
+	//		return
+	//	}
 
 	err := os.Mkdir("/var/OpenAuth/accesslog", 0755)
 	if err != nil && err == os.ErrExist {

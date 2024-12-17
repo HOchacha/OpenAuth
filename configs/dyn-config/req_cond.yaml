@@ -2,36 +2,28 @@ routes:
   - path: "/signup"
     method: "POST"
     request_filters:
-      - remote_server: "http://example.com/signup"
+      - remote_server: "http://10.106.248.129/auth/signup"
         request_format:
           Content-Type: "application/json"
-        fields_to_send: ["username", "password", "email"]
-    condition_filter:
-      conditions:
-        - field: "header"
-          operator: "equals"
-          value: "X-Requested-With"
+        fields_to_send: ["username", "password", "email", "role"]
+    handler_type: "signup"
+
   - path: "/signin"
     method: "POST"
     request_filters:
-      - remote_server: "http://example.com/login"
+      - remote_server: "http://10.106.248.129/auth/login"
         request_format:
           Content-Type: "application/json"
         fields_to_send: ["username", "password"]
-    condition_filter:
-      conditions:
-        - field: "header"
-          operator: "equals"
-          value: "X-Requested-With"
+    handler_type: "login"
+    
   - path: "/verify"
     method: "POST"
-    request_filters:
-      - remote_server: "http://example.com/verify"
-        request_format:
-          Content-Type: "application/json"
-        fields_to_send: ["token"]
-    condition_filter:
-      conditions:
-        - field: "header"
-          operator: "equals"
-          value: "X-Requested-With"
+    handler_type: "verify"
+
+
+jwt_config:
+  required_fields:
+    - "username"
+    - "role"
+    - "email"

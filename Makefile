@@ -5,7 +5,7 @@ BUILD_DIR=build
 GO=go
 
 # Docker parameters
-HUB ?= your-registry
+HUB ?= hochacha
 TAG ?= $(shell git describe --tags --always --dirty)
 DOCKER_IMAGE = ${HUB}/openauth:${TAG}
 

@@ -1,28 +1,59 @@
 package main
 
 import (
-	"OpenAuth/pkg/configDispatcher/configServer"
-	"OpenAuth/pkg/k8sQuery" // k8sQuery 패키지 import
+	"OpenAuth/pkg/configServer"
+	"OpenAuth/pkg/configServer/middleware"
+	"OpenAuth/pkg/jwt"
+	"OpenAuth/pkg/k8sQuery"
 	"fmt"
 	"io/ioutil"
+	"net/http"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v2"
 )
 
-type RouterManager struct {
-	engine         *gin.Engine
-	mu             sync.RWMutex
-	config         *configServer.Config
-	tokenValidator *k8sQuery.TokenValidator // TokenValidator 추가
+type HandlerSwitcher struct {
+	mu      sync.RWMutex
+	handler http.Handler
 }
 
+func (hs *HandlerSwitcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	hs.mu.RLock()
+	handler := hs.handler
+	hs.mu.RUnlock()
+	handler.ServeHTTP(w, r)
+}
+
+func (hs *HandlerSwitcher) UpdateHandler(newHandler http.Handler) {
+	hs.mu.Lock()
+	hs.handler = newHandler
+	hs.mu.Unlock()
+}
+
+type RouterManager struct {
+	engine          *gin.Engine
+	server          *http.Server
+	handlerSwitcher *HandlerSwitcher
+	mu              sync.RWMutex
+	config          *configServer.Config
+	tokenValidator  *k8sQuery.TokenValidator
+	jwtManager      *jwt.JWTManager
+}
+
+// this creates bear gin engine and set /config endpoint
+// To utilize this, you must config the router by /config endpoint with configuration yaml.
 func NewRouterManager() (*RouterManager, error) {
-	// TokenValidator 초기화
+
+	// Create TokenValidator for Integrity
+	// TokenValidator checks the JWT token signed by k8s api server with the given ServiceAccount
+	// If the token is named as below, it will be allowed to access the /config endpoint.
 	saConfig := k8sQuery.ServiceAccountConfig{
 		AllowedAccounts: map[string][]string{
-			"default": {"oauth-configurator"}, // 설정 업데이트 권한을 가진 ServiceAccount
+			"default": {"oauth-configurator"},
 		},
 	}
 
@@ -31,12 +62,22 @@ func NewRouterManager() (*RouterManager, error) {
 		return nil, fmt.Errorf("failed to create token validator: %v", err)
 	}
 
+	secretKey := os.Getenv("JWT_SECRET")
+	if secretKey == "" {
+		return nil, fmt.Errorf("JWT_SECRET_KEY environment variable is not set")
+	}
+
+	// Initialize JWTManager
+	tokenDuration := time.Hour * 1
+	jwtMgr := jwt.NewJWTManager(secretKey, tokenDuration)
+
 	rm := &RouterManager{
 		engine:         gin.Default(),
 		tokenValidator: validator,
+		jwtManager:     jwtMgr,
 	}
 
-	// /config 엔드포인트에 인증 미들웨어 적용
+	// /config endpoint
 	configGroup := rm.engine.Group("/config")
 	configGroup.Use(k8sQuery.AuthMiddleware(validator))
 	configGroup.POST("", rm.handleConfigUpdate)
@@ -44,10 +85,12 @@ func NewRouterManager() (*RouterManager, error) {
 	return rm, nil
 }
 
+// the function handle /config endpoint
+// this must embed on the gin engine in initiative time.
 func (rm *RouterManager) handleConfigUpdate(c *gin.Context) {
 	log.Debugf("handleConfigUpdate: Received a new configuration update request")
 
-	// 요청 본문 읽기
+	// read request body
 	yamlData, err := ioutil.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Debugf("Failed to read request body: %v", err)
@@ -56,7 +99,7 @@ func (rm *RouterManager) handleConfigUpdate(c *gin.Context) {
 	}
 	log.Debugf("Request body successfully read. Length: %d bytes", len(yamlData))
 
-	// YAML 파싱
+	// Parse YAML
 	var newConfig configServer.Config
 	if err := yaml.Unmarshal(yamlData, &newConfig); err != nil {
 		log.Debugf("Failed to parse YAML: %v", err)
@@ -65,7 +108,7 @@ func (rm *RouterManager) handleConfigUpdate(c *gin.Context) {
 	}
 	log.Debugf("YAML parsed successfully: %+v", newConfig)
 
-	// 라우터 설정 업데이트
+	// Update Router Configuration
 	log.Debugf("Attempting to update router configuration...")
 	if err := rm.UpdateConfig(&newConfig); err != nil {
 		log.Debugf("Failed to update router: %v", err)
@@ -77,67 +120,77 @@ func (rm *RouterManager) handleConfigUpdate(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Router configuration updated successfully"})
 }
 
+// this function updates the configuration of the router
 func (rm *RouterManager) UpdateConfig(newConfig *configServer.Config) error {
 	log.Debugf("UpdateConfig: Received request to update configuration")
 	log.Debugf("New Config: %+v", newConfig)
 
-	// 뮤텍스 활성화 후, gin 객체 재생성 및 새로 적용
+	// for thread safety, acquire lock.
+	// gin.engine shared by all requests, so it must be updated atomically.
 	log.Debugf("Acquiring lock to update router configuration")
+
+	/* Critical Section Start */
+
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
+	defer rm.mu.Unlock() // defines unlock after function returns
 	log.Debugf("Lock acquired")
 
-	// 새로운 서버 엔진 생성
 	log.Debugf("Creating a new Gin engine")
 	newEngine := gin.Default()
 	log.Debugf("New Gin engine created: %+v", newEngine)
 
-	// 새로운 엔진에도 인증된 /config 엔드포인트 설정
+	// Set /config endpoint
 	log.Debugf("Setting up /config endpoint with authentication middleware")
 	configGroup := newEngine.Group("/config")
 	configGroup.Use(k8sQuery.AuthMiddleware(rm.tokenValidator))
 	configGroup.POST("", rm.handleConfigUpdate)
 	log.Debugf("/config endpoint configured successfully")
 
-	// 나머지 라우트 설정
+	// set the router with the given configuration via /config endpoint
 	log.Debugf("Configuring additional routes")
 	for _, route := range newConfig.Routes {
 		log.Debugf("Processing route: Method=%s, Path=%s", route.Method, route.Path)
 
 		handlers := make([]gin.HandlerFunc, 0)
 
-		// RequestFilters 추가
+		// Add RequestFilters
 		for _, rf := range route.RequestFilters {
 			log.Debugf("Adding RequestFilter middleware: %+v", rf)
-			handlers = append(handlers, configServer.CreateRequestFilterMiddleware(&rf))
+			handlers = append(handlers, middleware.CreateRequestFilterMiddleware(&rf))
 		}
 
-		// ConditionFilter 추가
+		// Add ConditionFilter
 		if route.ConditionFilter != nil {
 			log.Debugf("Adding ConditionFilter middleware: %+v", route.ConditionFilter)
-			handlers = append(handlers, configServer.CreateConditionFilterMiddleware(route.ConditionFilter))
+			handlers = append(handlers, middleware.CreateConditionFilterMiddleware(route.ConditionFilter))
 		}
 
-		// 핸들러 설정
-		if len(handlers) > 0 {
-			finalHandler := handlers[len(handlers)-1]
-			handlers = handlers[:len(handlers)-1]
-			log.Debugf("Final middleware added: %+v", finalHandler)
-			newEngine.Handle(route.Method, route.Path, append(handlers, finalHandler)...)
-		} else {
-			log.Debugf("No handlers found for route: Method=%s, Path=%s", route.Method, route.Path)
+		// set final handler
+		log.Debugf("Final Handler Type: %s", route.HandlerType)
+		finalHandler := rm.getHandlerByType(route.HandlerType)
+		if finalHandler == nil {
+			panic("wrong configuration")
 		}
+		handlers = append(handlers, finalHandler)
+		log.Debugf("Final middleware added: %s", finalHandler)
+		newEngine.Handle(route.Method, route.Path, handlers...)
 	}
 
 	log.Debugf("All routes configured successfully")
 
-	// 새로운 엔진과 설정 적용
+	// Set new engine and configuration
 	log.Debugf("Updating RouterManager with new configuration and engine")
 	rm.engine = newEngine
 	rm.config = newConfig
-	log.Debugf("RouterManager updated successfully: Engine=%+v, Config=%+v", rm.engine, rm.config)
+	log.Debugf("RouterManager updated successfully: Engine=%+v\n\n Config=%+v\n", rm.engine, rm.config)
+
+	if rm.handlerSwitcher != nil {
+		rm.handlerSwitcher.UpdateHandler(rm.engine)
+	}
 
 	return nil
+
+	/* Critical Section ended by defer */
 }
 
 func (rm *RouterManager) GetEngine() *gin.Engine {
@@ -146,10 +199,20 @@ func (rm *RouterManager) GetEngine() *gin.Engine {
 	return rm.engine
 }
 
+// StartServer create initiative server with engine and address
 func StartServer(address string) error {
 	routerManager, err := NewRouterManager()
 	if err != nil {
 		return fmt.Errorf("failed to create router manager: %v", err)
 	}
-	return routerManager.GetEngine().Run(address)
+
+	handlerSwitcher := &HandlerSwitcher{handler: routerManager.GetEngine()}
+	routerManager.handlerSwitcher = handlerSwitcher
+
+	routerManager.server = &http.Server{
+		Addr:    address,
+		Handler: handlerSwitcher,
+	}
+
+	return routerManager.server.ListenAndServe()
 }

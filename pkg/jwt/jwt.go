@@ -7,12 +7,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// CustomClaims defines custom claims extending jwt.RegisteredClaims
-type CustomClaims struct {
-	Email string `json:"email"`
-	jwt.RegisteredClaims
-}
-
 // JWTManager handles JWT operations
 type JWTManager struct {
 	secretKey []byte
@@ -28,15 +22,15 @@ func NewJWTManager(secretKey string, expiry time.Duration) *JWTManager {
 }
 
 // GenerateToken creates a new JWT token for a user
-func (m *JWTManager) GenerateToken(userID string, email string) (string, error) {
+func (m *JWTManager) GenerateToken(userID string, role string) (string, error) {
 	claims := CustomClaims{
-		Email: email,
+		Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer:    "your-service-name",
+			Issuer:    "OpenAuth",
 		},
 	}
 

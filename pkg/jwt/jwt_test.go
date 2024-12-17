@@ -16,25 +16,25 @@ func TestJWTManager_GenerateToken(t *testing.T) {
 	tests := []struct {
 		name    string
 		userID  string
-		email   string
+		role    string
 		wantErr bool
 	}{
 		{
 			name:    "Valid token generation",
 			userID:  "user123",
-			email:   "test@example.com",
+			role:    "User",
 			wantErr: false,
 		},
 		{
 			name:    "Empty userID",
 			userID:  "",
-			email:   "test@example.com",
+			role:    "User",
 			wantErr: false,
 		},
 		{
-			name:    "Empty email",
+			name:    "Empty role",
 			userID:  "user123",
-			email:   "",
+			role:    "",
 			wantErr: false,
 		},
 	}
@@ -42,7 +42,7 @@ func TestJWTManager_GenerateToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Generate token
-			token, err := manager.GenerateToken(tt.userID, tt.email)
+			token, err := manager.GenerateToken(tt.userID, tt.role)
 
 			// Check error
 			if tt.wantErr {
@@ -68,7 +68,7 @@ func TestJWTManager_GenerateToken(t *testing.T) {
 			claims, ok := parsedToken.Claims.(*CustomClaims)
 			assert.True(t, ok)
 			assert.Equal(t, tt.userID, claims.Subject)
-			assert.Equal(t, tt.email, claims.Email)
+			assert.Equal(t, tt.role, claims.Role)
 		})
 	}
 }
@@ -85,20 +85,32 @@ func TestJWTManager_ValidateToken(t *testing.T) {
 		{
 			name: "Valid token",
 			setupFunc: func() string {
-				token, _ := manager.GenerateToken("user123", "test@example.com")
+				token, _ := manager.GenerateToken("user123", "Admin")
 				return token
 			},
 			wantErr: false,
 			checkFunc: func(claims *CustomClaims) bool {
 				return claims.Subject == "user123" &&
-					claims.Email == "test@example.com"
+					claims.Role == "Admin"
+			},
+		},
+		{
+			name: "Wrong role",
+			setupFunc: func() string {
+				token, _ := manager.GenerateToken("user123", "User")
+				return token
+			},
+			wantErr: false,
+			checkFunc: func(claims *CustomClaims) bool {
+				return claims.Subject == "user123" &&
+					claims.Role != "Admin"
 			},
 		},
 		{
 			name: "Expired token",
 			setupFunc: func() string { // set wrong time
 				expiredManager := NewJWTManager("test-secret", -1*time.Hour)
-				token, _ := expiredManager.GenerateToken("user123", "test@example.com")
+				token, _ := expiredManager.GenerateToken("user123", "Admin")
 				return token
 			},
 			wantErr: true,
@@ -107,7 +119,7 @@ func TestJWTManager_ValidateToken(t *testing.T) {
 			name: "Invalid signature",
 			setupFunc: func() string { //
 				wrongManager := NewJWTManager("wrong-secret", 1*time.Hour)
-				token, _ := wrongManager.GenerateToken("user123", "test@example.com")
+				token, _ := wrongManager.GenerateToken("user123", "Admin")
 				return token
 			},
 			wantErr: true,
@@ -159,7 +171,7 @@ func TestJWTManager_TokenExpiry(t *testing.T) {
 	// Verify token is now invalid
 	_, err = shortManager.ValidateToken(token)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "token has expired")
+	assert.Contains(t, err.Error(), "invalid token: token has invalid claims: token is expired")
 }
 
 // BenchmarkJWTManager_GenerateToken benchmarks token generation

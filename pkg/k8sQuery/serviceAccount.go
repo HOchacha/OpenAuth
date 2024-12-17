@@ -62,7 +62,7 @@ The package provides token validation and authentication middleware for Kubernet
 ServiceAccounts, ensuring only allowed service accounts can access protected resources.
 */
 
-// NewTokenValidator는 새로운 TokenValidator를 생성합니다
+// NewTokenValidator는 새로운 TokenValidator를 생성
 func NewTokenValidator(saConfig ServiceAccountConfig) (*TokenValidator, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -108,7 +108,7 @@ func validateServiceAccountToken(token string) (bool, error) {
 		},
 	}
 
-	// API 서버에 검증 요청
+	// API 서버에 검증
 	result, err := clientset.AuthenticationV1().TokenReviews().Create(
 		context.TODO(),
 		tokenReview,
@@ -180,7 +180,7 @@ func (tv *TokenValidator) ValidateToken(token string) (bool, string, error) {
 	return true, username, nil
 }
 
-// isAllowedServiceAccount는 주어진 ServiceAccount가 허용되는지 확인합니다
+// isAllowedServiceAccount는 주어진 ServiceAccount가 허용되는지 확인
 func (tv *TokenValidator) isAllowedServiceAccount(namespace, name string) bool {
 	// 현재 검증 중인 네임스페이스와 서비스 어카운트 이름을 출력
 	fmt.Printf("Checking if ServiceAccount is allowed:\n")

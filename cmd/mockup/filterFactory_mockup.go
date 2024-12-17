@@ -1,7 +1,7 @@
 package main
 
 import (
-	configServer "OpenAuth/pkg/configDispatcher/configServer"
+	"OpenAuth/pkg/configServer"
 
 	"log"
 )
