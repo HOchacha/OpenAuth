@@ -9,25 +9,34 @@ import (
 
 // JWTManager handles JWT operations
 type JWTManager struct {
-	secretKey []byte
-	expiry    time.Duration
+	SecretKey      []byte
+	Expiry         time.Duration
+	RequiredFields []string
 }
 
 // NewJWTManager creates a new JWT manager
-func NewJWTManager(secretKey string, expiry time.Duration) *JWTManager {
+func NewJWTManager(secretKey string, requiredFields []string) *JWTManager {
 	return &JWTManager{
-		secretKey: []byte(secretKey),
-		expiry:    expiry,
+		SecretKey:      []byte(secretKey),
+		Expiry:         86400,
+		RequiredFields: requiredFields,
 	}
 }
 
-// GenerateToken creates a new JWT token for a user
-func (m *JWTManager) GenerateToken(userID string, role string) (string, error) {
+// GenerateToken creates a new JWT token for a user with required fields
+func (m *JWTManager) GenerateToken(data map[string]interface{}) (string, error) {
+	// Check for required fields
+	for _, field := range m.RequiredFields {
+		if _, exists := data[field]; !exists {
+			return "", fmt.Errorf("missing required field: %s", field)
+		}
+	}
+
 	claims := CustomClaims{
-		Role: role,
+		Role: data["role"].(string),
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   userID,
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.expiry)),
+			Subject:   data["user_id"].(string),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.Expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "OpenAuth",
@@ -35,7 +44,7 @@ func (m *JWTManager) GenerateToken(userID string, role string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedToken, err := token.SignedString(m.secretKey)
+	signedToken, err := token.SignedString(m.SecretKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign token: %w", err)
 	}
@@ -53,7 +62,7 @@ func (m *JWTManager) ValidateToken(tokenStr string) (*CustomClaims, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return m.secretKey, nil
+			return m.SecretKey, nil
 		},
 	)
 

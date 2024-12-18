@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v2"
@@ -62,19 +60,9 @@ func NewRouterManager() (*RouterManager, error) {
 		return nil, fmt.Errorf("failed to create token validator: %v", err)
 	}
 
-	secretKey := os.Getenv("JWT_SECRET")
-	if secretKey == "" {
-		return nil, fmt.Errorf("JWT_SECRET_KEY environment variable is not set")
-	}
-
-	// Initialize JWTManager
-	tokenDuration := time.Hour * 1
-	jwtMgr := jwt.NewJWTManager(secretKey, tokenDuration)
-
 	rm := &RouterManager{
 		engine:         gin.Default(),
 		tokenValidator: validator,
-		jwtManager:     jwtMgr,
 	}
 
 	// /config endpoint
@@ -134,6 +122,11 @@ func (rm *RouterManager) UpdateConfig(newConfig *configServer.Config) error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock() // defines unlock after function returns
 	log.Debugf("Lock acquired")
+
+	rm.jwtManager = jwt.NewJWTManager(
+		newConfig.JWTConfig.SecretKey,
+		newConfig.JWTConfig.RequiredFields,
+	)
 
 	log.Debugf("Creating a new Gin engine")
 	newEngine := gin.Default()

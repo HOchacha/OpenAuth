@@ -9,8 +9,8 @@ import (
 )
 
 type Config struct {
-	Routes []RouteConfig `yaml:"routes"`
-	//JWTConfig jwt.JWTConfig `yaml:"jwt_config"`
+	Routes    []RouteConfig `yaml:"routes"`
+	JWTConfig JWTConfig     `yaml:"jwt_config"`
 }
 
 type RouteConfig struct {
@@ -19,6 +19,12 @@ type RouteConfig struct {
 	RequestFilters  []filters.RequestFilter  `yaml:"request_filters"`
 	ConditionFilter *filters.ConditionFilter `yaml:"condition_filter,omitempty"`
 	HandlerType     string                   `yaml:"handler_type"`
+}
+
+type JWTConfig struct {
+	SecretKey      string   `yaml:"secret_key"`
+	Expiry         string   `yaml:"expiry"`
+	RequiredFields []string `yaml:"required_fields"`
 }
 
 // this function is used on mockup server not for production

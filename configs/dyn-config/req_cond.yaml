@@ -23,6 +23,7 @@ routes:
 
 
 jwt_config:
+  secret_key: "12345667"
   required_fields:
     - "username"
     - "role"

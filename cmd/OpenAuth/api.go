@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,19 +16,16 @@ func (rm *RouterManager) handleSignup(c *gin.Context) {
 // if the request is valid, it will generate a token
 func (rm *RouterManager) handleLogin(c *gin.Context) {
 	// 로그인 로직 구현 (JWT 토큰 발행)
-	var loginData struct {
-		UserID string `json:"user_id"`
-		Role   string `json:"role"`
-	}
+	var loginData map[string]interface{}
 
 	if err := c.ShouldBindJSON(&loginData); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
-	token, err := rm.jwtManager.GenerateToken(loginData.UserID, loginData.Role)
+	token, err := rm.jwtManager.GenerateToken(loginData)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
@@ -42,17 +41,17 @@ func (rm *RouterManager) handleVerify(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&requestData); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
 	claims, err := rm.jwtManager.ValidateToken(requestData.Token)
 	if err != nil {
-		c.JSON(401, gin.H{"error": "Invalid token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "Token is valid", "claims": claims})
+	c.JSON(http.StatusOK, gin.H{"message": "Token is valid", "claims": claims})
 }
 
 func (rm *RouterManager) getHandlerByType(handlerType string) gin.HandlerFunc {
