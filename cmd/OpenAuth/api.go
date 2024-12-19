@@ -47,7 +47,7 @@ func (rm *RouterManager) handleVerify(c *gin.Context) {
 
 	claims, err := rm.jwtManager.ValidateToken(requestData.Token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err})
 		return
 	}
 

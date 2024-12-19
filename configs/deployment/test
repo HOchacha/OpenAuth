@@ -1,1 +1,0 @@
- curl -X POST http://10.105.190.161/otp/signup -H "Content-Type: application/json" -d '{"username": "alice"}'
